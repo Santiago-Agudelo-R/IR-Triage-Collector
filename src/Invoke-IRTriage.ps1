@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     Invoke-IRTriage collects running process metadata, active network connections,
-    common persistence registry keys, and local security configurations.
+    common persistence registry keys, active scheduled tasks, running and auto-start
+    services, and local security configurations.
     Designed for incident response execution via CrowdStrike Real Time Response (RTR),
     Microsoft Defender Live Response, WinRM, or local administrative sessions.
     All timestamps are recorded in UTC (ISO 8601). Output is exported to
@@ -194,6 +195,86 @@ function Get-PersistenceRegistry {
     return , $entries.ToArray()
 }
 
+function Get-ScheduledTasksTriage {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param ()
+
+    Write-Verbose "Collecting active scheduled tasks..."
+    $taskList = [System.Collections.Generic.List[PSObject]]::new()
+    $suspiciousPattern = '(?i)(powershell|pwsh|cmd\.exe|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|\\AppData\\|\\Temp\\|\\Users\\Public\\)'
+
+    try {
+        $tasks = Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.State -ne 'Disabled' }
+    }
+    catch {
+        Write-Warning "Scheduled task enumeration failed: $_"
+        return , $taskList.ToArray()
+    }
+
+    foreach ($t in $tasks) {
+        # Tasks can hold exec actions (Execute/Arguments) or COM handler actions (ClassId).
+        # Under StrictMode, reading a property that does not exist throws, which used to
+        # abort the whole collection on the first COM-handler task.
+        $actionParts = foreach ($action in @($t.Actions)) {
+            $props = $action.PSObject.Properties
+            if ($props['Execute'] -and $action.Execute) {
+                $arguments = if ($props['Arguments']) { $action.Arguments } else { $null }
+                "$($action.Execute) $arguments".Trim()
+            }
+            elseif ($props['ClassId'] -and $action.ClassId) {
+                "COM:$($action.ClassId)"
+            }
+        }
+        $actionsStr = @($actionParts) -join '; '
+
+        $taskList.Add([PSCustomObject]@{
+            TaskName           = $t.TaskName
+            TaskPath           = $t.TaskPath
+            State              = $t.State.ToString()
+            Author             = if ($t.PSObject.Properties['Author']) { $t.Author } else { $null }
+            Actions            = $actionsStr
+            IsSuspiciousAction = [bool]($actionsStr -match $suspiciousPattern)
+        })
+    }
+
+    return , $taskList.ToArray()
+}
+
+function Get-ServicesTriage {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param ()
+
+    Write-Verbose "Collecting running and auto-start service telemetry..."
+    $serviceList = [System.Collections.Generic.List[PSObject]]::new()
+
+    try {
+        $services = Get-CimInstance -ClassName Win32_Service -Filter "State = 'Running' OR StartMode = 'Auto'" -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Get-CimInstance Win32_Service query failed: $_"
+        return , $serviceList.ToArray()
+    }
+
+    foreach ($svc in $services) {
+        $isNonStandardPath = [bool]($svc.PathName -and ($svc.PathName -notmatch '(?i)C:\\Windows\\(System32|SysWOW64|WinSxS)\\'))
+
+        $serviceList.Add([PSCustomObject]@{
+            Name              = $svc.Name
+            DisplayName       = $svc.DisplayName
+            State             = $svc.State
+            StartMode         = $svc.StartMode
+            PathName          = $svc.PathName
+            StartName         = $svc.StartName
+            ProcessId         = $svc.ProcessId
+            IsNonStandardPath = $isNonStandardPath
+        })
+    }
+
+    return , $serviceList.ToArray()
+}
+
 function Get-SecurityPosture {
     Write-Verbose "Auditing baseline host security configuration..."
     $defenderState = $null
@@ -229,7 +310,7 @@ function Get-SecurityPosture {
     }
 }
 
-$collectorVersion = "1.0.1"
+$collectorVersion = "1.1.1"
 $isElevated = Test-IsAdministrator
 
 if (-not $isElevated) {
@@ -252,6 +333,8 @@ $triagePayload = [PSCustomObject]@{
     Processes           = Get-ProcessTriage -ComputeHash:$HashBinaries
     NetworkConnections  = Get-NetworkConnectionsTriage
     PersistenceRegistry = Get-PersistenceRegistry
+    ScheduledTasks      = Get-ScheduledTasksTriage
+    Services            = Get-ServicesTriage
     SecurityPosture     = Get-SecurityPosture
 }
 
@@ -284,4 +367,6 @@ $hashFilePath = "$destinationPath.sha256"
     ProcessCount       = @($triagePayload.Processes).Count
     ConnectionCount    = @($triagePayload.NetworkConnections).Count
     PersistenceEntries = @($triagePayload.PersistenceRegistry).Count
+    ScheduledTasks     = @($triagePayload.ScheduledTasks).Count
+    Services           = @($triagePayload.Services).Count
 }

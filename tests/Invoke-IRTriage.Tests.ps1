@@ -25,11 +25,19 @@ Describe 'Invoke-IRTriage' {
 
         It 'contains every top-level section' {
             $script:Report.PSObject.Properties.Name |
-                Should -Be @('Metadata', 'Processes', 'NetworkConnections', 'PersistenceRegistry', 'SecurityPosture')
+                Should -Be @('Metadata', 'Processes', 'NetworkConnections', 'PersistenceRegistry', 'ScheduledTasks', 'Services', 'SecurityPosture')
         }
 
         It 'collects at least one process' {
             @($script:Report.Processes).Count | Should -BeGreaterThan 0
+        }
+
+        It 'collects scheduled tasks (Windows always has enabled built-in tasks)' {
+            @($script:Report.ScheduledTasks).Count | Should -BeGreaterThan 0
+        }
+
+        It 'collects services' {
+            @($script:Report.Services).Count | Should -BeGreaterThan 0
         }
 
         It 'writes a sidecar hash file that matches the artifact' {
