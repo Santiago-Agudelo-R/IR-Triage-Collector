@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     Invoke-IRTriage collects running process metadata, active network connections,
-    common persistence registry keys, and local security configurations.
+    common persistence registry keys, active scheduled tasks, running services,
+    and local security configurations.
     Designed for incident response execution via CrowdStrike Real Time Response (RTR),
     Microsoft Defender Live Response, WinRM, or local administrative sessions.
     All timestamps are recorded in UTC (ISO 8601). Output is exported to
@@ -170,6 +171,63 @@ function Get-PersistenceRegistry {
     return $entries
 }
 
+function Get-ScheduledTasksTriage {
+    Write-Verbose "Collecting active scheduled tasks..."
+    $taskList = [System.Collections.Generic.List[PSObject]]::new()
+
+    try {
+        $tasks = Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.State -ne 'Disabled' }
+        foreach ($t in $tasks) {
+            $actionsStr = ($t.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() }) -join "; "
+            $isSuspiciousAction = ($actionsStr -match '(?i)(powershell|pwsh|cmd\.exe|wscript|cscript|mshta|certutil|bitsadmin|\\AppData\\|\\Temp\\)')
+
+            $taskList.Add([PSCustomObject]@{
+                TaskName           = $t.TaskName
+                TaskPath           = $t.TaskPath
+                State              = $t.State.ToString()
+                Actions            = $actionsStr
+                IsSuspiciousAction = [bool]$isSuspiciousAction
+            })
+        }
+    }
+    catch {
+        Write-Verbose "Scheduled task enumeration restricted or unavailable: $_"
+    }
+
+    return $taskList
+}
+
+function Get-ServicesTriage {
+    Write-Verbose "Collecting non-standard and running service telemetry..."
+    $serviceList = [System.Collections.Generic.List[PSObject]]::new()
+
+    try {
+        $services = Get-CimInstance -ClassName Win32_Service -Filter "State = 'Running' OR StartMode = 'Auto'" -ErrorAction Stop
+        foreach ($svc in $services) {
+            $isNonStandardPath = $false
+            if ($svc.PathName -and ($svc.PathName -notmatch '(?i)C:\\Windows\\(System32|SysWOW64|WinSxS)\\')) {
+                $isNonStandardPath = $true
+            }
+
+            $serviceList.Add([PSCustomObject]@{
+                Name              = $svc.Name
+                DisplayName       = $svc.DisplayName
+                State             = $svc.State
+                StartMode         = $svc.StartMode
+                PathName          = $svc.PathName
+                StartName         = $svc.StartName
+                ProcessId         = $svc.ProcessId
+                IsNonStandardPath = $isNonStandardPath
+            })
+        }
+    }
+    catch {
+        Write-Warning "Get-CimInstance Win32_Service query failed: $_"
+    }
+
+    return $serviceList
+}
+
 function Get-SecurityPosture {
     Write-Verbose "Auditing baseline host security configuration..."
     $defenderState = $null
@@ -216,7 +274,7 @@ Write-Host "[+] Initializing IR Triage on host: $hostName (UTC: $executionTimest
 
 $triagePayload = [PSCustomObject]@{
     Metadata = [PSCustomObject]@{
-        CollectorVersion  = "1.0.0"
+        CollectorVersion  = "1.1.0"
         HostName          = $hostName
         TimestampUtc      = $executionTimestampUtc
         OperatingSystem   = (Get-CimInstance -ClassName Win32_OperatingSystem).Caption
@@ -225,6 +283,8 @@ $triagePayload = [PSCustomObject]@{
     Processes           = Get-ProcessTriage -ComputeHash:$HashBinaries
     NetworkConnections  = Get-NetworkConnectionsTriage
     PersistenceRegistry = Get-PersistenceRegistry
+    ScheduledTasks      = Get-ScheduledTasksTriage
+    Services            = Get-ServicesTriage
     SecurityPosture     = Get-SecurityPosture
 }
 
