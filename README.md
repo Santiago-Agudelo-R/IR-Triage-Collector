@@ -2,9 +2,9 @@
 
 Enterprise live-response forensic triage collector for Windows endpoints during incident response and threat hunting operations.
 
-[![PSScriptAnalyzer](https://github.com/Titaaron/IR-Triage-Collector/actions/workflows/psscriptanalyzer.yml/badge.svg)](https://github.com/Titaaron/IR-Triage-Collector/actions)
 [![PowerShell 5.1 / 7+](https://img.shields.io/badge/PowerShell-5.1%20%7C%207%2B-blue.svg)](https://microsoft.com/PowerShell)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Titaaron/IR-Triage-Collector?color=success)](https://github.com/Titaaron/IR-Triage-Collector/releases)
 
 ---
 
@@ -20,7 +20,7 @@ All extracted dates are strictly normalized to ISO 8601 UTC format. Output repor
 
 1. **Running Processes:**
    - Process ID (PID) and Parent Process ID (PPID) mapping.
-   - Command-line arguments and working directory context.
+   - Command-line arguments and execution context.
    - Executable path verification.
    - High-risk path detection (flags binaries executed from `\AppData\`, `\Temp\`, `\Users\Public\`).
    - Authenticode digital signature validation and optional SHA256 binary hashing.
@@ -30,6 +30,8 @@ All extracted dates are strictly normalized to ISO 8601 UTC format. Output repor
 
 3. **Persistence Mechanisms:**
    - Registry run keys across `HKLM` and `HKCU` (`Run`, `RunOnce`, and 32-bit `WOW6432Node` paths).
+   - Active Scheduled Tasks, highlighting script engine invocations (PowerShell, WScript, MSHTA).
+   - Windows Services auditing (running and auto-start services, highlighting non-standard binaries outside `System32`).
 
 4. **Security Posture:**
    - Microsoft Defender engine status (RealTimeProtection, BehaviorMonitoring, signature freshness).
@@ -37,7 +39,7 @@ All extracted dates are strictly normalized to ISO 8601 UTC format. Output repor
 
 ---
 
-## Installation & Requirements
+## Requirements
 
 - Windows 10/11 or Windows Server 2016+
 - PowerShell 5.1 or PowerShell 7+
@@ -65,7 +67,7 @@ cd IR-Triage-Collector
 
 ### 3. Execution via CrowdStrike RTR or Defender Live Response
 ```powershell
-# Upload or paste Invoke-IRTriage.ps1 into the RTR session
+# Upload or paste Invoke-IRTriage.ps1 into the RTR / Live Response session
 run Invoke-IRTriage.ps1 -HashBinaries -OutputDirectory "C:\Windows\Temp\Triage"
 ```
 
@@ -76,7 +78,7 @@ run Invoke-IRTriage.ps1 -HashBinaries -OutputDirectory "C:\Windows\Temp\Triage"
 ```json
 {
   "Metadata": {
-    "CollectorVersion": "1.0.0",
+    "CollectorVersion": "1.1.0",
     "HostName": "WKSTN-SEC-01",
     "TimestampUtc": "2026-10-05T16:20:00.1234567Z",
     "OperatingSystem": "Microsoft Windows 11 Enterprise",
@@ -106,6 +108,8 @@ run Invoke-IRTriage.ps1 -HashBinaries -OutputDirectory "C:\Windows\Temp\Triage"
     }
   ],
   "PersistenceRegistry": [],
+  "ScheduledTasks": [],
+  "Services": [],
   "SecurityPosture": {
     "DefenderStatus": {
       "RealTimeProtectionEnabled": true,
@@ -115,12 +119,6 @@ run Invoke-IRTriage.ps1 -HashBinaries -OutputDirectory "C:\Windows\Temp\Triage"
   }
 }
 ```
-
----
-
-## CI / Code Quality
-
-This project enforces automated linting and best practice validation using Microsoft's `PSScriptAnalyzer` via GitHub Actions on every pull request and push to `main`.
 
 ---
 
