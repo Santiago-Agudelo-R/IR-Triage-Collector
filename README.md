@@ -30,6 +30,8 @@ All extracted dates are normalized to ISO 8601 UTC, regardless of the host's loc
 
 3. **Persistence Mechanisms:**
    - Registry run keys across `HKLM` and `HKCU` (`Run` and `RunOnce`, including the 32-bit `WOW6432Node` paths).
+   - Enabled scheduled tasks with their actions, flagging script interpreters and LOLBins (`powershell`, `cmd`, `wscript`, `mshta`, `rundll32`, `certutil`...) or user-writable paths.
+   - Running and auto-start services, flagging binaries outside `C:\Windows\System32` / `SysWOW64`.
 
 4. **Security Posture:**
    - Microsoft Defender engine status (RealTimeProtection, BehaviorMonitoring, signature freshness).
@@ -89,6 +91,8 @@ HashFile           : C:\IR_Output\Triage_WKSTN-SEC-01_20261005_162000.json.sha25
 ProcessCount       : 214
 ConnectionCount    : 38
 PersistenceEntries : 7
+ScheduledTasks     : 142
+Services           : 121
 ```
 
 Verify the artifact later with:
@@ -104,7 +108,7 @@ Verify the artifact later with:
 ```json
 {
   "Metadata": {
-    "CollectorVersion": "1.0.1",
+    "CollectorVersion": "1.1.1",
     "HostName": "WKSTN-SEC-01",
     "TimestampUtc": "2026-10-05T16:20:00.1234567Z",
     "OperatingSystem": "Microsoft Windows 11 Enterprise",
@@ -134,6 +138,28 @@ Verify the artifact later with:
     }
   ],
   "PersistenceRegistry": [],
+  "ScheduledTasks": [
+    {
+      "TaskName": "UpdaterTask",
+      "TaskPath": "\\",
+      "State": "Ready",
+      "Author": null,
+      "Actions": "powershell.exe -NoP -W Hidden -File C:\\Users\\Public\\upd.ps1",
+      "IsSuspiciousAction": true
+    }
+  ],
+  "Services": [
+    {
+      "Name": "ExampleSvc",
+      "DisplayName": "Example Service",
+      "State": "Running",
+      "StartMode": "Auto",
+      "PathName": "\"C:\\Program Files\\Example\\svc.exe\"",
+      "StartName": "LocalSystem",
+      "ProcessId": 3120,
+      "IsNonStandardPath": true
+    }
+  ],
   "SecurityPosture": {
     "DefenderStatus": {
       "RealTimeProtectionEnabled": true,
@@ -164,7 +190,8 @@ Invoke-Pester ./tests -Output Detailed
 
 ## Roadmap
 
-- [ ] Scheduled tasks and auto-start services (persistence)
+- [x] Scheduled tasks and auto-start services (persistence)
+- [ ] WMI event subscriptions and Startup folder persistence
 - [ ] DNS client cache and ARP table
 - [ ] Logged-on users and recent logon sessions
 - [ ] Optional CSV/HTML summary for quick analyst review
