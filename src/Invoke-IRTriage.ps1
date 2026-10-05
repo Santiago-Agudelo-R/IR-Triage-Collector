@@ -4,8 +4,7 @@
 
 .DESCRIPTION
     Invoke-IRTriage collects running process metadata, active network connections,
-    common persistence registry keys, active scheduled tasks, running services,
-    and local security configurations.
+    common persistence registry keys, and local security configurations.
     Designed for incident response execution via CrowdStrike Real Time Response (RTR),
     Microsoft Defender Live Response, WinRM, or local administrative sessions.
     All timestamps are recorded in UTC (ISO 8601). Output is exported to
@@ -50,38 +49,54 @@ function Test-IsAdministrator {
 
 function Get-ProcessTriage {
     [CmdletBinding()]
+    [OutputType([object[]])]
     param ([switch]$ComputeHash)
 
     Write-Verbose "Collecting running process telemetry..."
     $processList = [System.Collections.Generic.List[PSObject]]::new()
     $processes = Get-CimInstance -ClassName Win32_Process
+    $highRiskPatterns = @('\\AppData\\', '\\Temp\\', '\\Users\\Public\\', '\\ProgramData\\[^\\]+\.exe$')
+
+    # Cache per binary path: many processes share the same image (svchost.exe, chrome.exe...),
+    # so each file is hashed and signature-checked only once.
+    $binaryCache = @{}
 
     foreach ($proc in $processes) {
         $binaryPath = $proc.ExecutablePath
         $sha256 = "N/A"
         $isSigned = $null
 
-        if ($ComputeHash -and [string]::IsNullOrWhiteSpace($binaryPath) -eq $false -and (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
-            try {
-                $hashResult = Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256 -ErrorAction Stop
-                $sha256 = $hashResult.Hash
-            }
-            catch {
-                $sha256 = "AccessDeniedOrLocked"
+        if (-not [string]::IsNullOrWhiteSpace($binaryPath) -and (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+            if (-not $binaryCache.ContainsKey($binaryPath)) {
+                $entry = @{ SHA256 = "N/A"; IsSigned = $false }
+
+                # Signature validation always runs: it is the main signal for unsigned binaries.
+                try {
+                    $sig = Get-AuthenticodeSignature -LiteralPath $binaryPath -ErrorAction Stop
+                    $entry.IsSigned = ($sig.Status -eq [System.Management.Automation.SignatureStatus]::Valid)
+                }
+                catch {
+                    $entry.IsSigned = $false
+                }
+
+                if ($ComputeHash) {
+                    try {
+                        $entry.SHA256 = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256 -ErrorAction Stop).Hash
+                    }
+                    catch {
+                        $entry.SHA256 = "AccessDeniedOrLocked"
+                    }
+                }
+
+                $binaryCache[$binaryPath] = $entry
             }
 
-            try {
-                $sig = Get-AuthenticodeSignature -LiteralPath $binaryPath -ErrorAction Stop
-                $isSigned = ($sig.Status -eq [System.Management.Automation.SignatureStatus]::Valid)
-            }
-            catch {
-                $isSigned = $false
-            }
+            $sha256 = $binaryCache[$binaryPath].SHA256
+            $isSigned = $binaryCache[$binaryPath].IsSigned
         }
 
         $isHighRiskLocation = $false
         if ($binaryPath) {
-            $highRiskPatterns = @('\\AppData\\', '\\Temp\\', '\\Users\\Public\\', '\\ProgramData\\[^\\]+\.exe$')
             foreach ($pattern in $highRiskPatterns) {
                 if ($binaryPath -match $pattern) {
                     $isHighRiskLocation = $true
@@ -99,11 +114,13 @@ function Get-ProcessTriage {
             SHA256               = $sha256
             IsAuthenticodeSigned = $isSigned
             IsHighRiskLocation   = $isHighRiskLocation
-            CreationDateUtc      = if ($proc.CreationDate) { [DateTime]::Parse($proc.CreationDate).ToUniversalTime().ToString("o") } else { $null }
+            # CIM already returns a [DateTime]. Re-parsing it as text breaks on non-US locales
+            # (es-CO, es-ES...): the script crashed or swapped day/month.
+            CreationDateUtc      = if ($proc.CreationDate) { ([DateTime]$proc.CreationDate).ToUniversalTime().ToString("o") } else { $null }
         })
     }
 
-    return $processList
+    return , $processList.ToArray()
 }
 
 function Get-NetworkConnectionsTriage {
@@ -127,7 +144,7 @@ function Get-NetworkConnectionsTriage {
         Write-Warning "Get-NetTCPConnection query failed: $_"
     }
 
-    return $connectionList
+    return , $connectionList.ToArray()
 }
 
 function Get-PersistenceRegistry {
@@ -139,10 +156,12 @@ function Get-PersistenceRegistry {
         @{ Hive = "LocalMachine"; Path = "SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" },
         @{ Hive = "CurrentUser";  Path = "SOFTWARE\Microsoft\Windows\CurrentVersion\Run" },
         @{ Hive = "CurrentUser";  Path = "SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" },
-        @{ Hive = "LocalMachine"; Path = "SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" }
+        @{ Hive = "LocalMachine"; Path = "SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" },
+        @{ Hive = "LocalMachine"; Path = "SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce" }
     )
 
     foreach ($target in $targets) {
+        $baseKey = $null
         try {
             $baseKey = if ($target.Hive -eq "LocalMachine") {
                 [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($target.Path)
@@ -151,81 +170,28 @@ function Get-PersistenceRegistry {
             }
 
             if ($baseKey) {
-                $valueNames = $baseKey.GetValueNames()
-                foreach ($name in $valueNames) {
+                foreach ($name in $baseKey.GetValueNames()) {
+                    # A value can be empty/null; calling .ToString() on it used to abort
+                    # the whole key and silently drop the remaining entries.
+                    $rawValue = $baseKey.GetValue($name)
                     $entries.Add([PSCustomObject]@{
                         Hive      = $target.Hive
                         KeyPath   = $target.Path
                         ValueName = $name
-                        ValueData = $baseKey.GetValue($name).ToString()
+                        ValueData = if ($null -ne $rawValue) { [string]$rawValue } else { $null }
                     })
                 }
-                $baseKey.Close()
             }
         }
         catch {
             Write-Verbose "Could not read key $($target.Path): $_"
         }
-    }
-
-    return $entries
-}
-
-function Get-ScheduledTasksTriage {
-    Write-Verbose "Collecting active scheduled tasks..."
-    $taskList = [System.Collections.Generic.List[PSObject]]::new()
-
-    try {
-        $tasks = Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.State -ne 'Disabled' }
-        foreach ($t in $tasks) {
-            $actionsStr = ($t.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() }) -join "; "
-            $isSuspiciousAction = ($actionsStr -match '(?i)(powershell|pwsh|cmd\.exe|wscript|cscript|mshta|certutil|bitsadmin|\\AppData\\|\\Temp\\)')
-
-            $taskList.Add([PSCustomObject]@{
-                TaskName           = $t.TaskName
-                TaskPath           = $t.TaskPath
-                State              = $t.State.ToString()
-                Actions            = $actionsStr
-                IsSuspiciousAction = [bool]$isSuspiciousAction
-            })
+        finally {
+            if ($baseKey) { $baseKey.Close() }
         }
     }
-    catch {
-        Write-Verbose "Scheduled task enumeration restricted or unavailable: $_"
-    }
 
-    return $taskList
-}
-
-function Get-ServicesTriage {
-    Write-Verbose "Collecting non-standard and running service telemetry..."
-    $serviceList = [System.Collections.Generic.List[PSObject]]::new()
-
-    try {
-        $services = Get-CimInstance -ClassName Win32_Service -Filter "State = 'Running' OR StartMode = 'Auto'" -ErrorAction Stop
-        foreach ($svc in $services) {
-            $isNonStandardPath = $false
-            if ($svc.PathName -and ($svc.PathName -notmatch '(?i)C:\\Windows\\(System32|SysWOW64|WinSxS)\\')) {
-                $isNonStandardPath = $true
-            }
-
-            $serviceList.Add([PSCustomObject]@{
-                Name              = $svc.Name
-                DisplayName       = $svc.DisplayName
-                State             = $svc.State
-                StartMode         = $svc.StartMode
-                PathName          = $svc.PathName
-                StartName         = $svc.StartName
-                ProcessId         = $svc.ProcessId
-                IsNonStandardPath = $isNonStandardPath
-            })
-        }
-    }
-    catch {
-        Write-Warning "Get-CimInstance Win32_Service query failed: $_"
-    }
-
-    return $serviceList
+    return , $entries.ToArray()
 }
 
 function Get-SecurityPosture {
@@ -259,32 +225,33 @@ function Get-SecurityPosture {
 
     return [PSCustomObject]@{
         DefenderStatus    = $defenderState
-        LocalAdminMembers = $localAdmins
+        LocalAdminMembers = $localAdmins.ToArray()
     }
 }
 
-if (-not (Test-IsAdministrator)) {
+$collectorVersion = "1.0.1"
+$isElevated = Test-IsAdministrator
+
+if (-not $isElevated) {
     Write-Warning "Running in non-elevated context. Some low-level system artifacts may be restricted."
 }
 
 $executionTimestampUtc = [DateTime]::UtcNow.ToString("o")
 $hostName = [System.Environment]::MachineName
 
-Write-Host "[+] Initializing IR Triage on host: $hostName (UTC: $executionTimestampUtc)" -ForegroundColor Cyan
+Write-Verbose "[+] Initializing IR Triage on host: $hostName (UTC: $executionTimestampUtc)"
 
 $triagePayload = [PSCustomObject]@{
     Metadata = [PSCustomObject]@{
-        CollectorVersion  = "1.1.0"
+        CollectorVersion  = $collectorVersion
         HostName          = $hostName
         TimestampUtc      = $executionTimestampUtc
         OperatingSystem   = (Get-CimInstance -ClassName Win32_OperatingSystem).Caption
-        IsElevatedSession = (Test-IsAdministrator)
+        IsElevatedSession = $isElevated
     }
     Processes           = Get-ProcessTriage -ComputeHash:$HashBinaries
     NetworkConnections  = Get-NetworkConnectionsTriage
     PersistenceRegistry = Get-PersistenceRegistry
-    ScheduledTasks      = Get-ScheduledTasksTriage
-    Services            = Get-ServicesTriage
     SecurityPosture     = Get-SecurityPosture
 }
 
@@ -302,6 +269,19 @@ $jsonContent = $triagePayload | ConvertTo-Json -Depth 6
 
 $reportHash = (Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
 
-Write-Host "[+] Triage collection completed successfully." -ForegroundColor Green
-Write-Host "    Artifact Path : $destinationPath"
-Write-Host "    SHA256 Hash   : $reportHash"
+# Sidecar hash file (sha256sum format) so the integrity value travels with the evidence
+# instead of living only in the console scrollback.
+$hashFilePath = "$destinationPath.sha256"
+[System.IO.File]::WriteAllText($hashFilePath, "$($reportHash.ToLowerInvariant())  $outputFileName`n", [System.Text.Encoding]::ASCII)
+
+# Emit a result object (visible in RTR / Live Response consoles and usable in the pipeline).
+[PSCustomObject]@{
+    Status             = "Completed"
+    HostName           = $hostName
+    ArtifactPath       = $destinationPath
+    SHA256             = $reportHash
+    HashFile           = $hashFilePath
+    ProcessCount       = @($triagePayload.Processes).Count
+    ConnectionCount    = @($triagePayload.NetworkConnections).Count
+    PersistenceEntries = @($triagePayload.PersistenceRegistry).Count
+}
