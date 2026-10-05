@@ -32,18 +32,25 @@ jobs:
           Write-Output "No blocking findings."
 
   test:
-    name: Pester (${{ matrix.shell }})
+    name: Pester Tests
     runs-on: windows-latest
     needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Pester tests
-        shell: ${{ matrix.shell }}
+      - name: Run Pester tests (PowerShell Core 7)
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
+      - name: Run Pester tests (Windows PowerShell 5.1)
+        shell: powershell
         run: |
           Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
           Import-Module Pester -MinimumVersion 5.5.0
