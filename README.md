@@ -2,7 +2,7 @@
 
 Enterprise live-response forensic triage collector for Windows endpoints during incident response and threat hunting operations.
 
-[![PSScriptAnalyzer](https://github.com/Titaaron/IR-Triage-Collector/actions/workflows/psscriptanalyzer.yml/badge.svg)](https://github.com/Titaaron/IR-Triage-Collector/actions)
+[![PSScriptAnalyzer](https://github.com/Santiago-Agudelo-R/IR-Triage-Collector/actions/workflows/psscriptanalyzer.yml/badge.svg)](https://github.com/Santiago-Agudelo-R/IR-Triage-Collector/actions)
 [![PowerShell 5.1 / 7+](https://img.shields.io/badge/PowerShell-5.1%20%7C%207%2B-blue.svg)](https://microsoft.com/PowerShell)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -45,7 +45,7 @@ All extracted dates are normalized to ISO 8601 UTC, regardless of the host's loc
 
 Clone the repository:
 ```powershell
-git clone https://github.com/Titaaron/IR-Triage-Collector.git
+git clone https://github.com/Santiago-Agudelo-R/IR-Triage-Collector.git
 cd IR-Triage-Collector
 ```
 
