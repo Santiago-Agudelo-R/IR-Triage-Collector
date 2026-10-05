@@ -1,0 +1,17 @@
+# PowerShell
+*.ps1xml
+*.clixml
+*.pspki
+*.psm1.compiled
+
+# Output Artifacts
+TriageOutput/
+*.json
+*.csv
+*.log
+
+# OS & Editors
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
