@@ -1,25 +1,27 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.0.1] - YYYY-MM-DD
 
-## [1.1.0] - 2026-10-05
-
-### Added
-- Active scheduled task enumeration (`Get-ScheduledTasksTriage`) highlighting suspicious script interpreter invocations (PowerShell, WScript, MSHTA).
-- Windows service persistence collection (`Get-ServicesTriage`) mapping running and auto-start services, flagging non-standard execution paths outside `System32`.
+### Fixed
+- Process creation dates no longer fail or swap day/month on non-US system locales (e.g. `es-CO`). CIM `DateTime` values are now converted to UTC directly instead of being re-parsed as text.
+- A run key value with empty or null data no longer aborts that key and drops its remaining entries.
+- Empty sections are serialized as `[]` instead of `null`, matching the documented output schema.
 
 ### Changed
-- Standardized documentation layout and updated sample JSON schemas.
-
-## [1.0.0] - 2026-10-05
+- Authenticode signature validation now runs for every process; `-HashBinaries` only controls SHA256 hashing.
+- Hash and signature results are cached per binary path, so shared images (e.g. `svchost.exe`) are checked once.
+- The script now returns a result object (artifact path, hash, counts) instead of writing to the host, so it can be used in pipelines and remains visible in RTR / Live Response consoles.
 
 ### Added
-- Initial release of `Invoke-IRTriage.ps1`.
-- Live volatile process tree analysis with PID/PPID mapping and Authenticode signature verification.
-- Active TCP connection state gathering mapped to owning processes.
-- Common registry run-key persistence detection (`HKLM` and `HKCU`).
-- Host security posture audit (Microsoft Defender engine status and local Administrators group enumeration).
-- Strict ISO 8601 UTC timestamp normalization and SHA-256 integrity hash verification of output JSON.
+- `RunOnce` under `WOW6432Node` is now collected.
+- A `.sha256` sidecar file (sha256sum format) is written next to each JSON artifact.
+- Pester tests, including a regression test for the `es-CO` locale.
+- GitHub Actions workflow running PSScriptAnalyzer and Pester on Windows PowerShell 5.1 and PowerShell 7.
+
+## [1.0.0] - YYYY-MM-DD
+
+### Added
+- Initial release: process, network, run key persistence and security posture collection with JSON output and SHA256 integrity hash.
