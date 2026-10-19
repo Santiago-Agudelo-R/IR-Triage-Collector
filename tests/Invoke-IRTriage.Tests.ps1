@@ -15,9 +15,9 @@ Describe 'Invoke-IRTriage' {
             $script:Report = $script:RawJson | ConvertFrom-Json
         }
 
-        It 'returns a completed result object with v1.1.2 metadata' {
+        It 'returns a completed result object with v1.1.3 metadata' {
             $script:Result.Status | Should -Be 'Completed'
-            $script:Report.Metadata.CollectorVersion | Should -Be '1.1.2'
+            $script:Report.Metadata.CollectorVersion | Should -Be '1.1.3'
         }
 
         It 'writes the JSON artifact to the output directory' {
@@ -37,12 +37,19 @@ Describe 'Invoke-IRTriage' {
             @($script:Report.ScheduledTasks).Count | Should -BeGreaterThan 0
         }
 
-        It 'collects services with executable path resolution and Authenticode fields' {
+        It 'collects services and does not false-positive signed binaries in ProgramData (e.g. WinDefend)' {
             @($script:Report.Services).Count | Should -BeGreaterThan 0
             $firstSvc = $script:Report.Services[0]
             $firstSvc.PSObject.Properties.Name | Should -Contain 'ExecutablePath'
             $firstSvc.PSObject.Properties.Name | Should -Contain 'IsAuthenticodeSigned'
             $firstSvc.PSObject.Properties.Name | Should -Contain 'IsSuspiciousService'
+
+            $signedProgramDataSvcs = @($script:Report.Services | Where-Object {
+                $_.ExecutablePath -match '(?i)\\ProgramData\\' -and $_.IsAuthenticodeSigned -eq $true
+            })
+            foreach ($svc in $signedProgramDataSvcs) {
+                $svc.IsSuspiciousService | Should -BeFalse
+            }
         }
 
         It 'writes a sidecar hash file that matches the artifact' {

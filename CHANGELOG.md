@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.3] - 2026-10-18
+
+### Fixed
+- Removed `\ProgramData\` from the unconditional user-writable service path pattern in `Get-ServicesTriage` so legitimate Authenticode-signed services executing from `C:\ProgramData\` (such as Microsoft Defender's `WinDefend` / `MsMpEng.exe`) are not flagged with `IsSuspiciousService = $true`. Unsigned service binaries in `C:\ProgramData\` continue to be flagged as suspicious via the non-standard path + unsigned check.
+
 ## [1.1.2] - 2026-10-18
 
 ### Added
@@ -10,7 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Authenticode signature verification (cached per binary) inside `Get-ServicesTriage`, exposing `ExecutablePath`, `IsAuthenticodeSigned`, and `IsSuspiciousService` on every collected service object.
 
 ### Changed
-- Reduced false-positive triage noise on third-party enterprise services in `C:\Program Files\`: `IsSuspiciousService` only flags services executing from user-writable paths (`\AppData\`, `\Temp\`, `\Users\Public\`, `\ProgramData\`) or unsigned binaries outside standard Windows directories, while preserving `IsNonStandardPath` for backward compatibility.
+- Reduced false-positive triage noise on third-party enterprise services in `C:\Program Files\`: `IsSuspiciousService` only flags services executing from user-writable paths or unsigned binaries outside standard Windows directories, while preserving `IsNonStandardPath` for backward compatibility.
 
 ## [1.1.1] - 2026-10-05
 

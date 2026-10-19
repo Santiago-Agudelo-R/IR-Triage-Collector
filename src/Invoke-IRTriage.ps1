@@ -278,7 +278,7 @@ function Get-ServicesTriage {
     Write-Verbose "Collecting running and auto-start service telemetry..."
     $serviceList = [System.Collections.Generic.List[PSObject]]::new()
     $sigCache = @{}
-    $userWritablePattern = '(?i)(\\AppData\\|\\Temp\\|\\Users\\Public\\|\\ProgramData\\)'
+    $userWritablePattern = '(?i)(\\AppData\\|\\Temp\\|\\Users\\Public\\)'
 
     try {
         $services = Get-CimInstance -ClassName Win32_Service -Filter "State = 'Running' OR StartMode = 'Auto'" -ErrorAction Stop
@@ -362,7 +362,7 @@ function Get-SecurityPosture {
     }
 }
 
-$collectorVersion = "1.1.2"
+$collectorVersion = "1.1.3"
 $isElevated = Test-IsAdministrator
 
 if (-not $isElevated) {

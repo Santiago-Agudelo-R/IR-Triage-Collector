@@ -109,7 +109,7 @@ Verify the artifact later with:
 ```json
 {
   "Metadata": {
-    "CollectorVersion": "1.1.2",
+    "CollectorVersion": "1.1.3",
     "HostName": "WKSTN-SEC-01",
     "TimestampUtc": "2026-10-18T16:20:00.1234567Z",
     "OperatingSystem": "Microsoft Windows 11 Enterprise",
