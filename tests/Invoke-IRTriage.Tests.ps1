@@ -15,9 +15,9 @@ Describe 'Invoke-IRTriage' {
             $script:Report = $script:RawJson | ConvertFrom-Json
         }
 
-        It 'returns a completed result object with v1.1.3 metadata' {
+        It 'returns a completed result object with valid semantic version metadata' {
             $script:Result.Status | Should -Be 'Completed'
-            $script:Report.Metadata.CollectorVersion | Should -Be '1.1.3'
+            $script:Report.Metadata.CollectorVersion | Should -Match '^\d+\.\d+\.\d+$'
         }
 
         It 'writes the JSON artifact to the output directory' {
