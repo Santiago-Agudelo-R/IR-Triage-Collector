@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] - 2026-10-18
+
+### Added
+- `Resolve-ServiceExecutablePath` helper to extract underlying service binary paths from quoted or unquoted `Win32_Service.PathName` command lines.
+- Authenticode signature verification (cached per binary) inside `Get-ServicesTriage`, exposing `ExecutablePath`, `IsAuthenticodeSigned`, and `IsSuspiciousService` on every collected service object.
+
+### Changed
+- Reduced false-positive triage noise on third-party enterprise services in `C:\Program Files\`: `IsSuspiciousService` only flags services executing from user-writable paths (`\AppData\`, `\Temp\`, `\Users\Public\`, `\ProgramData\`) or unsigned binaries outside standard Windows directories, while preserving `IsNonStandardPath` for backward compatibility.
+
 ## [1.1.1] - 2026-10-05
 
 ### Fixed

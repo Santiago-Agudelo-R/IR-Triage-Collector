@@ -5,6 +5,7 @@ Enterprise live-response forensic triage collector for Windows endpoints during 
 [![PSScriptAnalyzer](https://github.com/Santiago-Agudelo-R/IR-Triage-Collector/actions/workflows/psscriptanalyzer.yml/badge.svg)](https://github.com/Santiago-Agudelo-R/IR-Triage-Collector/actions)
 [![PowerShell 5.1 / 7+](https://img.shields.io/badge/PowerShell-5.1%20%7C%207%2B-blue.svg)](https://microsoft.com/PowerShell)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Santiago-Agudelo-R/IR-Triage-Collector?color=success)](https://github.com/Santiago-Agudelo-R/IR-Triage-Collector/releases)
 
 ---
 
@@ -31,7 +32,7 @@ All extracted dates are normalized to ISO 8601 UTC, regardless of the host's loc
 3. **Persistence Mechanisms:**
    - Registry run keys across `HKLM` and `HKCU` (`Run` and `RunOnce`, including the 32-bit `WOW6432Node` paths).
    - Enabled scheduled tasks with their actions, flagging script interpreters and LOLBins (`powershell`, `cmd`, `wscript`, `mshta`, `rundll32`, `certutil`...) or user-writable paths.
-   - Running and auto-start services, flagging binaries outside `C:\Windows\System32` / `SysWOW64`.
+   - Running and auto-start services (`Get-ServicesTriage`), resolving underlying executable paths from `PathName`, validating Authenticode signatures (cached), and flagging unsigned binaries outside `C:\Windows\` or services executing from user-writable locations (`IsSuspiciousService`).
 
 4. **Security Posture:**
    - Microsoft Defender engine status (RealTimeProtection, BehaviorMonitoring, signature freshness).
@@ -78,16 +79,16 @@ run Invoke-IRTriage.ps1 -HashBinaries -OutputDirectory "C:\Windows\Temp\Triage"
 Every run produces two files in the output directory and returns a summary object:
 
 ```text
-Triage_WKSTN-SEC-01_20261005_162000.json
-Triage_WKSTN-SEC-01_20261005_162000.json.sha256
+Triage_WKSTN-SEC-01_20261018_162000.json
+Triage_WKSTN-SEC-01_20261018_162000.json.sha256
 ```
 
 ```text
 Status             : Completed
 HostName           : WKSTN-SEC-01
-ArtifactPath       : C:\IR_Output\Triage_WKSTN-SEC-01_20261005_162000.json
+ArtifactPath       : C:\IR_Output\Triage_WKSTN-SEC-01_20261018_162000.json
 SHA256             : 3A7BD3E2360A3D29EEA436FCFB7E44C735D117C42D1C1835420B6B9942DD4F1B
-HashFile           : C:\IR_Output\Triage_WKSTN-SEC-01_20261005_162000.json.sha256
+HashFile           : C:\IR_Output\Triage_WKSTN-SEC-01_20261018_162000.json.sha256
 ProcessCount       : 214
 ConnectionCount    : 38
 PersistenceEntries : 7
@@ -98,7 +99,7 @@ Services           : 121
 Verify the artifact later with:
 
 ```powershell
-(Get-FileHash .\Triage_WKSTN-SEC-01_20261005_162000.json -Algorithm SHA256).Hash
+(Get-FileHash .\Triage_WKSTN-SEC-01_20261018_162000.json -Algorithm SHA256).Hash
 ```
 
 ---
@@ -108,9 +109,9 @@ Verify the artifact later with:
 ```json
 {
   "Metadata": {
-    "CollectorVersion": "1.1.1",
+    "CollectorVersion": "1.1.2",
     "HostName": "WKSTN-SEC-01",
-    "TimestampUtc": "2026-10-05T16:20:00.1234567Z",
+    "TimestampUtc": "2026-10-18T16:20:00.1234567Z",
     "OperatingSystem": "Microsoft Windows 11 Enterprise",
     "IsElevatedSession": true
   },
@@ -124,12 +125,12 @@ Verify the artifact later with:
       "SHA256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
       "IsAuthenticodeSigned": true,
       "IsHighRiskLocation": false,
-      "CreationDateUtc": "2026-10-05T16:15:30.0000000Z"
+      "CreationDateUtc": "2026-10-18T16:15:30.0000000Z"
     }
   ],
   "NetworkConnections": [
     {
-      "LocalAddress": "192.168.1.15",
+      "LocalAddress": "192.0.2.15",
       "LocalPort": 49832,
       "RemoteAddress": "198.51.100.24",
       "RemotePort": 443,
@@ -154,10 +155,13 @@ Verify the artifact later with:
       "DisplayName": "Example Service",
       "State": "Running",
       "StartMode": "Auto",
-      "PathName": "\"C:\\Program Files\\Example\\svc.exe\"",
+      "PathName": "\"C:\\Program Files\\Example\\svc.exe\" --service",
+      "ExecutablePath": "C:\\Program Files\\Example\\svc.exe",
       "StartName": "LocalSystem",
       "ProcessId": 3120,
-      "IsNonStandardPath": true
+      "IsNonStandardPath": true,
+      "IsAuthenticodeSigned": true,
+      "IsSuspiciousService": false
     }
   ],
   "SecurityPosture": {
@@ -191,6 +195,7 @@ Invoke-Pester ./tests -Output Detailed
 ## Roadmap
 
 - [x] Scheduled tasks and auto-start services (persistence)
+- [x] Service binary path parsing and Authenticode signature validation
 - [ ] WMI event subscriptions and Startup folder persistence
 - [ ] DNS client cache and ARP table
 - [ ] Logged-on users and recent logon sessions

@@ -48,6 +48,35 @@ function Test-IsAdministrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Resolve-ServiceExecutablePath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param (
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$PathName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PathName)) {
+        return $null
+    }
+
+    $trimmed = $PathName.Trim()
+    if ($trimmed.StartsWith('"')) {
+        $closingQuote = $trimmed.IndexOf('"', 1)
+        if ($closingQuote -gt 1) {
+            return $trimmed.Substring(1, $closingQuote - 1)
+        }
+    }
+
+    if ($trimmed -match '^(?i)([a-z]:\\[^\r\n]+?\.(?:exe|sys|dll))\b') {
+        return $Matches[1]
+    }
+
+    return ($trimmed -split '\s+')[0]
+}
+
 function Get-ProcessTriage {
     [CmdletBinding()]
     [OutputType([object[]])]
@@ -248,6 +277,8 @@ function Get-ServicesTriage {
 
     Write-Verbose "Collecting running and auto-start service telemetry..."
     $serviceList = [System.Collections.Generic.List[PSObject]]::new()
+    $sigCache = @{}
+    $userWritablePattern = '(?i)(\\AppData\\|\\Temp\\|\\Users\\Public\\|\\ProgramData\\)'
 
     try {
         $services = Get-CimInstance -ClassName Win32_Service -Filter "State = 'Running' OR StartMode = 'Auto'" -ErrorAction Stop
@@ -258,17 +289,38 @@ function Get-ServicesTriage {
     }
 
     foreach ($svc in $services) {
+        $exePath = Resolve-ServiceExecutablePath -PathName $svc.PathName
         $isNonStandardPath = [bool]($svc.PathName -and ($svc.PathName -notmatch '(?i)C:\\Windows\\(System32|SysWOW64|WinSxS)\\'))
+        $isSigned = $null
+
+        if (-not [string]::IsNullOrWhiteSpace($exePath) -and (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+            if (-not $sigCache.ContainsKey($exePath)) {
+                try {
+                    $sig = Get-AuthenticodeSignature -LiteralPath $exePath -ErrorAction Stop
+                    $sigCache[$exePath] = ($sig.Status -eq [System.Management.Automation.SignatureStatus]::Valid)
+                }
+                catch {
+                    $sigCache[$exePath] = $false
+                }
+            }
+            $isSigned = $sigCache[$exePath]
+        }
+
+        $isUserWritablePath = [bool]($svc.PathName -and ($svc.PathName -match $userWritablePattern))
+        $isSuspiciousService = [bool]($isUserWritablePath -or ($isNonStandardPath -and ($isSigned -eq $false)))
 
         $serviceList.Add([PSCustomObject]@{
-            Name              = $svc.Name
-            DisplayName       = $svc.DisplayName
-            State             = $svc.State
-            StartMode         = $svc.StartMode
-            PathName          = $svc.PathName
-            StartName         = $svc.StartName
-            ProcessId         = $svc.ProcessId
-            IsNonStandardPath = $isNonStandardPath
+            Name                 = $svc.Name
+            DisplayName          = $svc.DisplayName
+            State                = $svc.State
+            StartMode            = $svc.StartMode
+            PathName             = $svc.PathName
+            ExecutablePath       = $exePath
+            StartName            = $svc.StartName
+            ProcessId            = $svc.ProcessId
+            IsNonStandardPath    = $isNonStandardPath
+            IsAuthenticodeSigned = $isSigned
+            IsSuspiciousService  = $isSuspiciousService
         })
     }
 
@@ -310,7 +362,7 @@ function Get-SecurityPosture {
     }
 }
 
-$collectorVersion = "1.1.1"
+$collectorVersion = "1.1.2"
 $isElevated = Test-IsAdministrator
 
 if (-not $isElevated) {
