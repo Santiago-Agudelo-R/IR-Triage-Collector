@@ -192,17 +192,22 @@ Invoke-Pester ./tests -Output Detailed
 
 ---
 
-## Roadmap
+## EDR Live Response Notes & Limitations
 
-- [x] Scheduled tasks and auto-start services (persistence)
-- [x] Service binary path parsing and Authenticode signature validation
-- [ ] WMI event subscriptions and Startup folder persistence
-- [ ] DNS client cache and ARP table
-- [ ] Logged-on users and recent logon sessions
-- [ ] Optional CSV/HTML summary for quick analyst review
-- [ ] Packaging as a PowerShell module
+- **Execution Context (`SYSTEM` vs. User):** CrowdStrike Falcon RTR and Microsoft Defender Live Response execute scripts as `NT AUTHORITY\SYSTEM`. While `HKLM` Run keys, services, and scheduled tasks are collected system-wide, `HKCU` Run keys reflect the active hive of the account running the script unless user hives under `HKEY_USERS` are explicitly mounted.
+- **Binary Hashing Timeouts (`-HashBinaries`):** Computing SHA256 hashes and Authenticode signatures across all running binaries adds I/O overhead (mitigated by per-path caching). In EDR consoles with strict command timeouts (for example, 10-minute default RTR session limits), run without `-HashBinaries` first for rapid triage.
+- **Heuristic False Positives:** Third-party enterprise agents installed under `C:\ProgramData\` (such as EDR, RMM, or backup helpers) are only flagged as `IsSuspiciousService = true` when the binary is **unsigned** or executes from a user-writable profile directory (`\AppData\`, `\Temp\`, `\Users\Public\`).
 
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+---
+
+## Planned Enhancements
+
+- WMI event subscriptions (`__EventFilter` / `CommandLineEventConsumer`) and Startup folder persistence
+- DNS client cache and ARP table snapshots
+- Interactive logon sessions (`Win32_LogonSession`)
+- Optional CSV/HTML summary report for analyst review
+
+See [CHANGELOG.md](CHANGELOG.md) for completed features and release history.
 
 ---
 
