@@ -40,6 +40,19 @@ All extracted dates are normalized to ISO 8601 UTC, regardless of the host's loc
 
 ---
 
+## MITRE ATT&CK Coverage
+
+| Telemetry Module | MITRE ATT&CK Technique | Detection Focus |
+| :--- | :--- | :--- |
+| **Running Processes** | `T1059.001` (PowerShell), `T1036` (Masquerading) | Captures full `CommandLine`, parent-child PID trees, Authenticode signature status, SHA256 hashes, and binaries executing from `\AppData\`, `\Temp\`, or `\Users\Public\`. |
+| **Network State** | `T1071` (Application Layer Protocol), `T1041` (Exfiltration) | Correlates active `Established`, `Listen`, and `SynSent` TCP sockets back to owning process IDs (`OwningProcess`). |
+| **Registry Run Keys** | `T1547.001` (Registry Run Keys / Startup Folder) | Audits `Run` and `RunOnce` across `HKLM`, `HKCU`, and 32-bit `WOW6432Node` hives. |
+| **Scheduled Tasks** | `T1053.005` (Scheduled Task/Job: Scheduled Task) | Flags enabled tasks invoking script interpreters or LOLBins (`powershell`, `pwsh`, `cmd`, `wscript`, `cscript`, `mshta`, `rundll32`, `regsvr32`, `certutil`, `bitsadmin`) or user-writable paths. |
+| **Windows Services** | `T1543.003` (Create or Modify System Process: Windows Service) | Resolves service executable paths, validates Authenticode signatures, and flags unsigned binaries outside `C:\Windows\` or services running from user-writable directories. |
+| **Security Posture** | `T1562.001` (Impair Defenses), `T1098` (Account Manipulation) | Verifies Microsoft Defender real-time/behavior monitoring state and enumerates local `Administrators` group membership. |
+
+---
+
 ## Installation & Requirements
 
 - Windows 10/11 or Windows Server 2016+
