@@ -10,7 +10,6 @@ Describe 'Invoke-IRTriage' {
         BeforeAll {
             $script:OutDir = Join-Path -Path $TestDrive -ChildPath 'out'
             $script:Result = & $script:ScriptPath -OutputDirectory $script:OutDir -WarningAction SilentlyContinue
-            # Keep the raw text too: ConvertFrom-Json in PowerShell 7 turns ISO dates into [DateTime].
             $script:RawJson = Get-Content -LiteralPath $script:Result.ArtifactPath -Raw
             $script:Report = $script:RawJson | ConvertFrom-Json
         }
@@ -24,13 +23,21 @@ Describe 'Invoke-IRTriage' {
             Test-Path -LiteralPath $script:Result.ArtifactPath | Should -BeTrue
         }
 
-        It 'contains every top-level section' {
+        It 'contains every top-level section including WmiPersistence, DnsAndArpCache, and LogonSessions' {
             $script:Report.PSObject.Properties.Name |
-                Should -Be @('Metadata', 'Processes', 'NetworkConnections', 'PersistenceRegistry', 'ScheduledTasks', 'Services', 'SecurityPosture')
+                Should -Be @('Metadata', 'Processes', 'NetworkConnections', 'PersistenceRegistry', 'ScheduledTasks', 'Services', 'WmiPersistence', 'DnsAndArpCache', 'LogonSessions', 'SecurityPosture')
         }
 
-        It 'collects at least one process' {
+        It 'collects processes and evaluates IsMasqueradingSuspect (T1036.005)' {
             @($script:Report.Processes).Count | Should -BeGreaterThan 0
+            $firstProc = $script:Report.Processes[0]
+            $firstProc.PSObject.Properties.Name | Should -Contain 'IsMasqueradingSuspect'
+        }
+
+        It 'collects active TCP/UDP network endpoints without failing when SynSent is empty' {
+            @($script:Report.NetworkConnections).Count | Should -BeGreaterThan 0
+            $firstConn = $script:Report.NetworkConnections[0]
+            $firstConn.PSObject.Properties.Name | Should -Contain 'Protocol'
         }
 
         It 'collects scheduled tasks (Windows always has enabled built-in tasks)' {
@@ -52,6 +59,14 @@ Describe 'Invoke-IRTriage' {
             }
         }
 
+        It 'collects WMI persistence, DNS/ARP cache, and logon session sections with valid structure' {
+            $script:Report.PSObject.Properties.Name | Should -Contain 'WmiPersistence'
+            $script:Report.DnsAndArpCache.PSObject.Properties.Name | Should -Be @('DnsClientCache', 'ArpNeighbors')
+            $script:Result.PSObject.Properties.Name | Should -Contain 'WmiSubscriptions'
+            $script:Result.PSObject.Properties.Name | Should -Contain 'DnsCacheEntries'
+            $script:Result.PSObject.Properties.Name | Should -Contain 'LogonSessions'
+        }
+
         It 'writes a sidecar hash file that matches the artifact' {
             $expected = (Get-FileHash -LiteralPath $script:Result.ArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
             (Get-Content -LiteralPath $script:Result.HashFile -Raw) | Should -Match "^$expected\s"
@@ -59,6 +74,25 @@ Describe 'Invoke-IRTriage' {
 
         It 'stores the run timestamp as ISO 8601 UTC' {
             $script:RawJson | Should -Match '"TimestampUtc":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z"'
+        }
+    }
+
+    Context 'Test-SystemBinaryMasquerading (T1036.005 unit tests)' {
+        BeforeAll {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:ScriptPath, [ref]$null, [ref]$null)
+            $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-SystemBinaryMasquerading' }, $true)
+            . ([scriptblock]::Create($fn.Extent.Text))
+        }
+
+        It 'returns false for legitimate System32 svchost.exe and explorer.exe in SystemRoot' {
+            $sysRoot = if ($env:SystemRoot) { $env:SystemRoot } else { 'C:\Windows' }
+            Test-SystemBinaryMasquerading -ProcessName 'svchost.exe' -ExecutablePath "$sysRoot\System32\svchost.exe" | Should -BeFalse
+            Test-SystemBinaryMasquerading -ProcessName 'explorer.exe' -ExecutablePath "$sysRoot\explorer.exe" | Should -BeFalse
+        }
+
+        It 'returns true when svchost.exe or lsass.exe executes from a non-system directory' {
+            Test-SystemBinaryMasquerading -ProcessName 'svchost.exe' -ExecutablePath 'C:\Users\Public\svchost.exe' | Should -BeTrue
+            Test-SystemBinaryMasquerading -ProcessName 'lsass.exe' -ExecutablePath 'C:\ProgramData\lsass.exe' | Should -BeTrue
         }
     }
 
