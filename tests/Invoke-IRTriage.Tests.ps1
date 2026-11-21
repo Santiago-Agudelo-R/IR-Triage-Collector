@@ -61,7 +61,7 @@ Describe 'Invoke-IRTriage' {
 
         It 'collects WMI persistence, DNS/ARP cache, and logon session sections with valid structure' {
             $script:Report.PSObject.Properties.Name | Should -Contain 'WmiPersistence'
-            $script:Report.DnsAndArpCache.PSObject.Properties.Name | Should -Be @('DnsClientCache', 'ArpNeighbors')
+            $script:Report.DnsAndArpCache.PSObject.Properties.Name | Should -Be @('DnsClientCache', 'DnsTotalEntries', 'DnsTruncated', 'ArpNeighbors', 'ArpTotalEntries', 'ArpTruncated')
             $script:Result.PSObject.Properties.Name | Should -Contain 'WmiSubscriptions'
             $script:Result.PSObject.Properties.Name | Should -Contain 'DnsCacheEntries'
             $script:Result.PSObject.Properties.Name | Should -Contain 'LogonSessions'
