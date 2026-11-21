@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-11-21
+
+### Fixed
+- **Offline user hives (`-MountOfflineUserHives`):** The documentation said hives were mounted read-only, but `reg load` opens a hive read-write and can replay transaction logs into it. The collector now copies `NTUSER.DAT` and its `.LOG1`/`.LOG2` files to a temporary folder, loads the copy, and deletes it afterwards, so the original evidence is never loaded.
+- **Offline user hives:** `ProfileImagePath` values such as `%SystemDrive%\Users\alice` are now expanded before use.
+- **Logon sessions:** Each session now includes its account (`DOMAIN\user`) from `Win32_LoggedOnUser`; previously sessions had no owner.
+
 ## [1.2.0] - 2026-11-21
 
 ### Added

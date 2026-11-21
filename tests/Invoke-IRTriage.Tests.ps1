@@ -116,4 +116,15 @@ Describe 'Invoke-IRTriage' {
             }
         }
     }
+
+    Context 'Offline user hives (-MountOfflineUserHives)' {
+        It 'completes and leaves no temporary hive mounted or copied' {
+            $outDir = Join-Path -Path $TestDrive -ChildPath 'offline'
+            $result = & $script:ScriptPath -OutputDirectory $outDir -MountOfflineUserHives -WarningAction SilentlyContinue
+            $result.Status | Should -Be 'Completed'
+
+            @([Microsoft.Win32.Registry]::Users.GetSubKeyNames() | Where-Object { $_ -like 'IR_Offline_*' }).Count | Should -Be 0
+            @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'IRTriageHive_*' -ErrorAction SilentlyContinue).Count | Should -Be 0
+        }
+    }
 }

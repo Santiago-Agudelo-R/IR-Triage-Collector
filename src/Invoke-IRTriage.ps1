@@ -24,8 +24,11 @@
     Switch parameter. When enabled, computes SHA256 hashes of running executable binaries.
 
 .PARAMETER MountOfflineUserHives
-    Switch parameter. When enabled in an elevated session, temporarily mounts unmounted local
-    user profile NTUSER.DAT files read-only under HKEY_USERS to inspect per-user Run/RunOnce keys.
+    Switch parameter. When enabled in an elevated session, copies the NTUSER.DAT (and .LOG1/.LOG2)
+    of each local profile that is not currently loaded to a temporary folder, loads the COPY under
+    HKEY_USERS to read its Run/RunOnce keys, then unloads and deletes it. The original hive files
+    are never loaded, because 'reg load' opens a hive read-write. Copying still updates the source
+    files' last-access time on volumes where that is enabled.
 
 .NOTES
     Author: Santiago Agudelo
@@ -356,21 +359,41 @@ function Get-PersistenceRegistry {
                         if ($profSub) { $profSub.Close() }
 
                         if ($profPath) {
+                            # ProfileImagePath is usually REG_EXPAND_SZ (%SystemDrive%\Users\...).
+                            $profPath = [System.Environment]::ExpandEnvironmentVariables($profPath)
                             $ntUserDat = Join-Path $profPath "NTUSER.DAT"
-                            $tempMountName = "IR_Offline_$sid"
                             if (Test-Path -LiteralPath $ntUserDat -PathType Leaf) {
+                                # 'reg load' opens a hive read-write and can replay pending transaction logs
+                                # into it. To leave the original evidence untouched, load a temporary copy of
+                                # NTUSER.DAT (plus its .LOG1/.LOG2 files) instead of the file itself.
+                                $copyDir = Join-Path ([System.IO.Path]::GetTempPath()) "IRTriageHive_$([guid]::NewGuid().ToString('N'))"
+                                $tempMountName = "IR_Offline_$sid"
+                                $mounted = $false
                                 try {
-                                    $null = & reg.exe load "HKU\$tempMountName" $ntUserDat 2>$null
-                                    if ($LASTEXITCODE -eq 0) {
+                                    $null = New-Item -ItemType Directory -Path $copyDir -Force
+                                    foreach ($hiveFile in @(Get-ChildItem -LiteralPath $profPath -Filter 'NTUSER.DAT*' -File -Force -ErrorAction Stop |
+                                            Where-Object { $_.Name -match '^(?i)NTUSER\.DAT(\.LOG[12])?$' })) {
+                                        Copy-Item -LiteralPath $hiveFile.FullName -Destination $copyDir -Force -ErrorAction Stop
+                                    }
+
+                                    $null = & reg.exe load "HKU\$tempMountName" (Join-Path $copyDir 'NTUSER.DAT') 2>$null
+                                    $mounted = ($LASTEXITCODE -eq 0)
+                                    if ($mounted) {
                                         foreach ($p in $userRunPaths) {
-                                            Read-RegistryRunSubKey -RootKey ([Microsoft.Win32.Registry]::Users) -HiveLabel "OfflineHive\$sid" -SubKeyPath "$tempMountName\$p" -Collector $entries
+                                            Read-RegistryRunSubKey -RootKey ([Microsoft.Win32.Registry]::Users) -HiveLabel "OfflineHiveCopy\$sid" -SubKeyPath "$tempMountName\$p" -Collector $entries
                                         }
                                     }
                                 }
+                                catch {
+                                    Write-Verbose "Could not inspect offline hive for ${sid}: $_"
+                                }
                                 finally {
-                                    [System.GC]::Collect()
-                                    [System.GC]::WaitForPendingFinalizers()
-                                    $null = & reg.exe unload "HKU\$tempMountName" 2>$null
+                                    if ($mounted) {
+                                        [System.GC]::Collect()
+                                        [System.GC]::WaitForPendingFinalizers()
+                                        $null = & reg.exe unload "HKU\$tempMountName" 2>$null
+                                    }
+                                    Remove-Item -LiteralPath $copyDir -Recurse -Force -ErrorAction SilentlyContinue
                                 }
                             }
                         }
@@ -617,8 +640,19 @@ function Get-LogonSessionTriage {
         # LogonType 2 = Interactive, 10 = RemoteInteractive (RDP), 11 = CachedInteractive
         $sessions = @(Get-CimInstance -ClassName Win32_LogonSession -Filter "LogonType = 2 OR LogonType = 10 OR LogonType = 11" -ErrorAction Stop)
         foreach ($s in $sessions) {
+            # Win32_LoggedOnUser links each session to its account; without it a session has no owner.
+            $account = $null
+            try {
+                $acct = Get-CimAssociatedInstance -InputObject $s -Association Win32_LoggedOnUser -ErrorAction Stop | Select-Object -First 1
+                if ($acct) { $account = "$($acct.Domain)\$($acct.Name)" }
+            }
+            catch {
+                Write-Verbose "Could not resolve account for logon session $($s.LogonId): $_"
+            }
+
             $sessionList.Add([PSCustomObject]@{
                 LogonId               = [string]$s.LogonId
+                Account               = $account
                 LogonType             = [int]$s.LogonType
                 AuthenticationPackage = [string]$s.AuthenticationPackage
                 StartTimeUtc          = if ($s.StartTime) { ([DateTime]$s.StartTime).ToUniversalTime().ToString("o") } else { $null }
@@ -667,7 +701,7 @@ function Get-SecurityPosture {
     }
 }
 
-$collectorVersion = "1.2.0"
+$collectorVersion = "1.2.1"
 $isElevated = Test-IsAdministrator
 
 if (-not $isElevated) {
