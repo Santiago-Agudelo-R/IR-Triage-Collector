@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-11-21
+
+### Fixed
+- **DNS and ARP snapshots:** The collector silently kept only the first 250 entries of each cache, so an analyst could not tell the evidence was incomplete. The cap is now 1,000 entries, and the report includes `DnsTotalEntries`, `ArpTotalEntries`, `DnsTruncated` and `ArpTruncated`.
+
 ## [1.2.1] - 2026-11-21
 
 ### Fixed
@@ -13,13 +18,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [1.2.0] - 2026-11-21
 
 ### Added
-- **Multi-User Hive Run-Key Enumeration (`Get-PersistenceRegistry` — `Q5`):** Iterates all loaded user SIDs under `HKEY_USERS` (`S-1-5-21-...`) so running as `NT AUTHORITY\SYSTEM` in CrowdStrike RTR or Defender Live Response captures logged-on user `Run` and `RunOnce` keys. Added optional `-MountOfflineUserHives` switch to temporarily mount unmounted local `NTUSER.DAT` hives read-only.
-- **System Binary Masquerading Detection (`Test-SystemBinaryMasquerading` — MITRE `T1036.005`, `Q6`):** Flags processes named after core Windows system executables (`svchost.exe`, `lsass.exe`, `csrss.exe`, `explorer.exe`, etc.) executing from paths outside `$env:SystemRoot` (`IsMasqueradingSuspect`).
+- **Multi-User Hive Run-Key Enumeration (`Get-PersistenceRegistry`):** Iterates all loaded user SIDs under `HKEY_USERS` (`S-1-5-21-...`) so running as `NT AUTHORITY\SYSTEM` in CrowdStrike RTR or Defender Live Response captures logged-on user `Run` and `RunOnce` keys. Added optional `-MountOfflineUserHives` switch to temporarily mount unmounted local `NTUSER.DAT` hives read-only.
+- **System Binary Masquerading Detection (`Test-SystemBinaryMasquerading` — MITRE `T1036.005`):** Flags processes named after core Windows system executables (`svchost.exe`, `lsass.exe`, `csrss.exe`, `explorer.exe`, etc.) executing from paths outside `$env:SystemRoot` (`IsMasqueradingSuspect`).
 - **UDP Endpoints, WMI Subscriptions, DNS/ARP Cache & Logon Sessions (`Get-WmiPersistenceTriage`, `Get-DnsAndArpCacheTriage`, `Get-LogonSessionTriage`):** Added UDP listening endpoint collection (`Get-NetUDPEndpoint`), `root\subscription` WMI persistence enumeration (`T1546.003`), DNS/ARP cache snapshots, and interactive/RDP logon session enumeration (`Win32_LogonSession`).
 
 ### Fixed
 - **TCP State Filtering (`Get-NetworkConnectionsTriage`):** Filtered TCP connection states post-query so hosts with zero active `SynSent` sockets no longer throw a CIM exception that discarded `Established` and `Listen` connections.
-- **Dynamic `$env:SystemRoot` & Interactive `$OutputDirectory` Fallback (`Q6`, `S7`):** Replaced hardcoded `C:\Windows\` path checks in `Get-ServicesTriage` with `$env:SystemRoot`, and added an `$env:TEMP\IRTriageOutput` fallback when `$PSScriptRoot` is empty in interactive RTR paste sessions.
+- **Dynamic `$env:SystemRoot` & Interactive `$OutputDirectory` Fallback:** Replaced hardcoded `C:\Windows\` path checks in `Get-ServicesTriage` with `$env:SystemRoot`, and added an `$env:TEMP\IRTriageOutput` fallback when `$PSScriptRoot` is empty in interactive RTR paste sessions.
 
 ## [1.1.3] - 2026-10-18
 

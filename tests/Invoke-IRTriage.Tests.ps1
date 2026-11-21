@@ -72,6 +72,14 @@ Describe 'Invoke-IRTriage' {
             (Get-Content -LiteralPath $script:Result.HashFile -Raw) | Should -Match "^$expected\s"
         }
 
+        It 'reports DNS and ARP totals and whether each snapshot was truncated' {
+            $cache = $script:Report.DnsAndArpCache
+            $cache.PSObject.Properties.Name | Should -Contain 'DnsTruncated'
+            $cache.PSObject.Properties.Name | Should -Contain 'ArpTruncated'
+            $cache.DnsTotalEntries | Should -BeGreaterOrEqual @($cache.DnsClientCache).Count
+            $cache.ArpTotalEntries | Should -BeGreaterOrEqual @($cache.ArpNeighbors).Count
+        }
+
         It 'stores the run timestamp as ISO 8601 UTC' {
             $script:RawJson | Should -Match '"TimestampUtc":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z"'
         }

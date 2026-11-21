@@ -582,16 +582,22 @@ function Get-WmiPersistenceTriage {
 function Get-DnsAndArpCacheTriage {
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
-    param ()
+    param (
+        [ValidateRange(1, 100000)]
+        [int]$MaxEntries = 1000
+    )
 
     Write-Verbose "Collecting DNS client cache and ARP neighbor snapshots..."
     $dnsEntries = [System.Collections.Generic.List[PSObject]]::new()
     $arpEntries = [System.Collections.Generic.List[PSObject]]::new()
+    $dnsTotal = 0
+    $arpTotal = 0
 
     if (Get-Command -Name Get-DnsClientCache -ErrorAction SilentlyContinue) {
         try {
-            $rawDns = Get-DnsClientCache -ErrorAction Stop | Select-Object -First 250
-            foreach ($d in $rawDns) {
+            $allDns = @(Get-DnsClientCache -ErrorAction Stop)
+            $dnsTotal = $allDns.Count
+            foreach ($d in ($allDns | Select-Object -First $MaxEntries)) {
                 $dnsEntries.Add([PSCustomObject]@{
                     Entry      = [string]$d.Entry
                     RecordName = [string]$d.Name
@@ -607,8 +613,9 @@ function Get-DnsAndArpCacheTriage {
 
     if (Get-Command -Name Get-NetNeighbor -ErrorAction SilentlyContinue) {
         try {
-            $rawArp = Get-NetNeighbor -ErrorAction Stop | Where-Object { $_.State -in @('Reachable', 'Stale', 'Delay', 'Probe', 'Permanent') } | Select-Object -First 250
-            foreach ($n in $rawArp) {
+            $allArp = @(Get-NetNeighbor -ErrorAction Stop | Where-Object { $_.State -in @('Reachable', 'Stale', 'Delay', 'Probe', 'Permanent') })
+            $arpTotal = $allArp.Count
+            foreach ($n in ($allArp | Select-Object -First $MaxEntries)) {
                 $arpEntries.Add([PSCustomObject]@{
                     IPAddress        = [string]$n.IPAddress
                     LinkLayerAddress = [string]$n.LinkLayerAddress
@@ -622,9 +629,14 @@ function Get-DnsAndArpCacheTriage {
         }
     }
 
+    # Report the real totals so an analyst knows when the snapshot was capped.
     return [PSCustomObject]@{
-        DnsClientCache = $dnsEntries.ToArray()
-        ArpNeighbors   = $arpEntries.ToArray()
+        DnsClientCache      = $dnsEntries.ToArray()
+        DnsTotalEntries     = $dnsTotal
+        DnsTruncated        = ($dnsTotal -gt $dnsEntries.Count)
+        ArpNeighbors        = $arpEntries.ToArray()
+        ArpTotalEntries     = $arpTotal
+        ArpTruncated        = ($arpTotal -gt $arpEntries.Count)
     }
 }
 
@@ -701,7 +713,7 @@ function Get-SecurityPosture {
     }
 }
 
-$collectorVersion = "1.2.1"
+$collectorVersion = "1.2.2"
 $isElevated = Test-IsAdministrator
 
 if (-not $isElevated) {

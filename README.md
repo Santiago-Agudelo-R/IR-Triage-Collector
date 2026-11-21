@@ -52,7 +52,7 @@ All extracted dates are normalized to ISO 8601 UTC, regardless of the host's loc
 | **Scheduled Tasks** | `T1053.005` (Scheduled Task/Job: Scheduled Task) | Flags enabled tasks invoking script interpreters or LOLBins (`powershell`, `pwsh`, `cmd`, `wscript`, `cscript`, `mshta`, `rundll32`, `regsvr32`, `certutil`, `bitsadmin`) or user-writable paths. |
 | **Windows Services** | `T1543.003` (Create or Modify System Process: Windows Service) | Resolves service executable paths, validates Authenticode signatures, and flags unsigned binaries outside `$env:SystemRoot` or services running from user-writable directories. |
 | **WMI Subscriptions** | `T1546.003` (Event Triggered Execution: WMI Event Subscription) | Audits `root\subscription` (`__EventFilter`, `__EventConsumer`, `__FilterToConsumerBinding`) and flags non-standard consumers beyond `SCM Event Log Consumer`. |
-| **DNS & ARP Cache** | `T1071.004` (DNS), `T1018` (Remote System Discovery) | Captures volatile `Get-DnsClientCache` and `Get-NetNeighbor` snapshots prior to host network containment. |
+| **DNS & ARP Cache** | `T1071.004` (DNS), `T1018` (Remote System Discovery) | Captures volatile `Get-DnsClientCache` and `Get-NetNeighbor` snapshots prior to host network containment (up to 1,000 entries each; `DnsTruncated` / `ArpTruncated` and the real totals show when a snapshot was capped). |
 | **Security Posture** | `T1562.001` (Impair Defenses), `T1078` (Valid Accounts) | Verifies Microsoft Defender real-time/behavior monitoring state, enumerates local `Administrators` (`S-1-5-32-544`), and lists interactive/RDP `Win32_LogonSession` entries. |
 
 ---
